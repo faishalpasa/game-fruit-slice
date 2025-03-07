@@ -6,35 +6,78 @@ const scoreElement = document.getElementById('score');
 class Fruit {
   constructor() {
     this.id = Math.random().toString(36).substring(2, 15);
-    this.size = Math.random() * 30 + 30; // Ukuran buah acak
-    this.speed = Math.random() * 5 + 2; // Kecepatan turun acak
-    this.x = Math.random() * window.innerWidth - this.size;
-    this.y = window.innerHeight + 50; // Mulai di bawah layar
+    this.size = Math.random() * 100 + 50;
+    
+    // Determine spawn side (left or right)
+    this.spawnSide = Math.random() < 0.5 ? 'left' : 'right';
+    
+    // Set initial position based on spawn side
+    if (this.spawnSide === 'left') {
+      this.x = -this.size; // Start from left outside
+      this.velocityX = 3 + Math.random() * 5; // Move right
+      this.rotationSpeed = 0.05 + Math.random() * 0.05; // Clockwise rotation
+    } else {
+      this.x = canvas.width + this.size; // Start from right outside
+      this.velocityX = -(3 + Math.random() * 5); // Move left
+      this.rotationSpeed = -(0.05 + Math.random() * 0.05); // Counter-clockwise rotation
+    }
+    
+    this.y = window.innerHeight + 50;
     this.image = new Image();
-    this.image.src = 'https://placehold.co/50'; // Ganti dengan gambar buah yang diinginkan
+    this.image.src = 'https://placehold.co/50';
     this.isImageLoaded = false;
+    
+    // Physics properties
+    // this.velocityY = (-15 - Math.random() * 10);
+    this.velocityY = -35;
+    this.gravity = 1;
+    // this.weight = this.size / 50;
+    this.weight = 1;
+    this.rotation = 0;
 
     this.image.onload = () => {
       this.isImageLoaded = true;
     };
   }
 
-  // Gerakkan buah ke atas
   move() {
-    this.y -= this.speed;
+    // Apply physics
+    this.velocityY += this.gravity * this.weight;
+    this.y += this.velocityY;
+    this.x += this.velocityX;
+    this.rotation += this.rotationSpeed;
+
+    // Boundary check and bounce
+    if (this.x < -this.size * 2) {
+      this.x = -this.size * 2;
+      this.velocityX *= -0.8; // Bounce with reduced velocity
+    } else if (this.x > canvas.width + this.size) {
+      this.x = canvas.width + this.size;
+      this.velocityX *= -0.8; // Bounce with reduced velocity
+    }
   }
 
-  // Gambar buah
   draw() {
     if (this.isImageLoaded) {
-      ctx.drawImage(this.image, this.x, this.y, this.size, this.size);
+      // Save current context state
+      ctx.save();
+      
+      // Move to fruit's position and rotate
+      ctx.translate(this.x + this.size/2, this.y + this.size/2);
+      ctx.rotate(this.rotation);
+      
+      // Draw the image centered
+      ctx.drawImage(this.image, -this.size/2, -this.size/2, this.size, this.size);
+      
+      // Restore context state
+      ctx.restore();
     }
 
-    // Gambar lingkaran merah di sekitar buah
+    // Draw hitbox circle
     ctx.beginPath();
     ctx.arc(this.x + this.size / 2, this.y + this.size / 2, this.size / 2, 0, Math.PI * 2);
-    ctx.strokeStyle = 'red'; // Warna merah
-    ctx.lineWidth = 3; // Lebar garis
+    ctx.strokeStyle = 'red';
+    ctx.lineWidth = 3;
     ctx.stroke();
   }
 
@@ -64,8 +107,32 @@ function adjustCanvasSize() {
 }
 
 // Fungsi untuk menambahkan buah baru
-function spawnFruit() {
-  fruits.push(new Fruit());
+function spawnFruit(count = 1) {
+  for (let i = 0; i < count; i++) {
+    const fruit = new Fruit();
+    
+    // Randomly decide spawn side for each fruit
+    const spawnFromLeft = Math.random() < 0.5;
+    
+    // Update initial position and velocities based on random spawn side
+    if (spawnFromLeft) {
+      fruit.x = -fruit.size;
+      fruit.velocityX = 5 + Math.random() * 5;
+      fruit.rotationSpeed = 0.05 + Math.random() * 0.05;
+    } else {
+      fruit.x = canvas.width + fruit.size;
+      fruit.velocityX = -(5 + Math.random() * 5);
+      fruit.rotationSpeed = -(0.05 + Math.random() * 0.05);
+    }
+    
+    // Add slight variation to initial Y position and velocity for multiple fruits
+    if (count > 1) {
+      fruit.y += (Math.random() - 0.5) * 100; // Vary vertical position
+      fruit.velocityY += (Math.random() - 0.5) * 5; // Vary initial upward velocity
+    }
+    
+    fruits.push(fruit);
+  }
 }
 
 // Fungsi deteksi apakah buah terpotong
@@ -118,7 +185,8 @@ function updateFruits() {
     fruit.move();
     return fruit;
   });
-  fruits = fruits.filter(fruit => fruit.y > -fruit.size); // Hapus buah yang sudah di luar layar
+  // Remove fruits that are below the screen with some buffer
+  fruits = fruits.filter(fruit => fruit.y < window.innerHeight + 100);
 }
 
 // Fungsi untuk memperbarui animasi
@@ -146,14 +214,16 @@ function update() {
   animationFrameId = requestAnimationFrame(update); // Panggil update setiap frame
 }
 
-// Menambahkan buah baru setiap 2 detik
+// Update spawn interval to be more frequent
 setInterval(() => {
-  spawnFruit(); // Tambahkan buah baru setiap 1 detik
+  // Spawn 1-3 fruits randomly
+  const fruitCount = Math.floor(Math.random() * 3) + 1;
+  spawnFruit(fruitCount);
 }, 1000);
 
 // Update buah setiap 25ms
 setInterval(() => {
-  updateFruits(); // Update posisi buah
+  updateFruits();
 }, 25);
 
 // Mulai game loop
