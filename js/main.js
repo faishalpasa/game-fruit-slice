@@ -93,8 +93,15 @@ class Fruit {
 
 let fruits = [];
 let score = 0;
-let swipePoints = [];
+let currentSwipe = [];
+let swipes = [];
 let animationFrameId;
+let swipeTrails = []; // Array to store multiple active trails
+let lastPoints = {}; // Store last points for each touch
+let trails = [];
+const TRAIL_LENGTH = 20; // Number of points in each trail
+const TRAIL_SPACING = 5; // Distance between trail points
+const FADE_TIMEOUT = 100; // Time in ms before trail starts fading when finger is stationary
 
 // Fungsi untuk menyesuaikan ukuran canvas berdasarkan perangkat
 function adjustCanvasSize() {
@@ -169,52 +176,85 @@ canvas.addEventListener('click', (e) => {
 
 // Handler untuk touch di perangkat mobile
 canvas.addEventListener('touchstart', (e) => {
-  const mx1 = e.touches[0].clientX;
-  const my1 = e.touches[0].clientY;
-  const mx2 = e.touches[1]?.clientX;
-  const my2 = e.touches[1]?.clientY;
-
-  const touches = [{ x: mx1, y: my1 }];
-
-  if (mx2 && my2) {
-    touches.push({ x: mx2, y: my2 });
+  e.preventDefault();
+  
+  for (let touch of e.changedTouches) {
+    // Create new trail with initial points and last movement timestamp
+    const points = Array(TRAIL_LENGTH).fill().map(() => ({
+      x: touch.clientX,
+      y: touch.clientY,
+      timestamp: Date.now()
+    }));
+    
+    trails.push({
+      id: touch.identifier,
+      points: points,
+      lastMoveTime: Date.now(), // Track when the finger last moved
+      lastX: touch.clientX,
+      lastY: touch.clientY
+    });
   }
 
+  const touches = Array.from(e.touches).map(t => ({ x: t.clientX, y: t.clientY }));
   detectSlicedFruit(touches);
 });
 
 canvas.addEventListener('touchmove', (e) => {
-  const mx1 = e.touches[0].clientX;
-  const my1 = e.touches[0].clientY;
-  const mx2 = e.touches[1]?.clientX;
-  const my2 = e.touches[1]?.clientY;
+  e.preventDefault();
+  
+  for (let touch of e.changedTouches) {
+    const trail = trails.find(t => t.id === touch.identifier);
+    if (trail) {
+      // Check if finger has moved significantly (more than 1 pixel)
+      const dx = touch.clientX - trail.lastX;
+      const dy = touch.clientY - trail.lastY;
+      const hasMoved = Math.sqrt(dx * dx + dy * dy) > 1;
 
-  const touches = [{ x: mx1, y: my1 }];
-  const points = [];
-  const newPoint1 = {
-    x: mx1,
-    y: my1,
-    timestamp: Date.now(),
-  };
-  points.push(newPoint1);
-
-  if (mx2 && my2) {
-    touches.push({ x: mx2, y: my2 });
-    const newPoint2 = {
-      x: mx2,
-      y: my2,
-      timestamp: Date.now(),
-    };
-    points.push(newPoint2);
+      if (hasMoved) {
+        trail.lastMoveTime = Date.now();
+        trail.lastX = touch.clientX;
+        trail.lastY = touch.clientY;
+        
+        // Move first point to current touch position
+        trail.points[0] = {
+          x: touch.clientX,
+          y: touch.clientY,
+          timestamp: Date.now()
+        };
+        
+        // Update rest of trail points to follow with spring effect
+        for (let i = 1; i < trail.points.length; i++) {
+          const dx = trail.points[i-1].x - trail.points[i].x;
+          const dy = trail.points[i-1].y - trail.points[i].y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          if (distance > TRAIL_SPACING) {
+            const angle = Math.atan2(dy, dx);
+            trail.points[i] = {
+              x: trail.points[i-1].x - Math.cos(angle) * TRAIL_SPACING,
+              y: trail.points[i-1].y - Math.sin(angle) * TRAIL_SPACING,
+              timestamp: Date.now()
+            };
+          }
+        }
+      }
+    }
   }
 
-  // Menambahkan titik baru ke swipePoints
-
-  if (points.length) {
-    swipePoints.push(...points);
-  }
-
+  const touches = Array.from(e.touches).map(t => ({ x: t.clientX, y: t.clientY }));
   detectSlicedFruit(touches);
+});
+
+canvas.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  
+  // Remove trails for ended touches
+  for (let touch of e.changedTouches) {
+    const index = trails.findIndex(t => t.id === touch.identifier);
+    if (index !== -1) {
+      trails.splice(index, 1);
+    }
+  }
 });
 
 // Fungsi untuk memperbarui animasi dan gerakkan buah
@@ -229,27 +269,67 @@ function updateFruits() {
 
 // Fungsi untuk memperbarui animasi
 function update() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height); // Hapus layar setiap frame
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Gambar semua buah
+  // Draw all fruits
   fruits.forEach(fruit => {
     fruit.draw();
   });
 
-  // Gambar titik-titik swipe yang menghilang perlahan
-  swipePoints = swipePoints.filter(point => Date.now() - point.timestamp <= 500); // Hapus titik setelah 0.5 detik
-
-  // Gambar titik-titik dengan opasitas yang berkurang
-  swipePoints.forEach(point => {
-    const elapsed = Date.now() - point.timestamp;
-    const opacity = Math.max(0, 1 - elapsed / 500); // Menghitung opasitas berdasarkan waktu
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(0, 255, 0, ${opacity})`;
-    ctx.fill();
+  // Draw active trails
+  trails.forEach(trail => {
+    drawTrail(trail);
   });
 
-  animationFrameId = requestAnimationFrame(update); // Panggil update setiap frame
+  animationFrameId = requestAnimationFrame(update);
+}
+
+// New function to draw the trailing effect
+function drawTrail(trail) {
+  const points = trail.points;
+  if (points.length < 2) return;
+
+  const timeSinceMove = Date.now() - trail.lastMoveTime;
+  const fadeStart = FADE_TIMEOUT;
+  const fadeDuration = 200; // Time to completely fade out
+  
+  // Calculate opacity based on time since last movement
+  let opacity = 1;
+  if (timeSinceMove > fadeStart) {
+    opacity = Math.max(0, 1 - (timeSinceMove - fadeStart) / fadeDuration);
+  }
+  
+  if (opacity === 0) return; // Don't draw if completely faded
+
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+
+  // Draw curve through points
+  for (let i = 1; i < points.length; i++) {
+    const xc = (points[i].x + points[i-1].x) / 2;
+    const yc = (points[i].y + points[i-1].y) / 2;
+    ctx.quadraticCurveTo(points[i-1].x, points[i-1].y, xc, yc);
+  }
+
+  // Create gradient for trail
+  const gradient = ctx.createLinearGradient(
+    points[0].x, points[0].y,
+    points[points.length-1].x, points[points.length-1].y
+  );
+  gradient.addColorStop(0, `rgba(0, 255, 255, ${opacity})`);
+  gradient.addColorStop(1, 'rgba(0, 255, 255, 0)');
+
+  // Draw main trail
+  ctx.strokeStyle = gradient;
+  ctx.lineWidth = 8;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // Add glow effect
+  ctx.strokeStyle = `rgba(255, 255, 255, ${opacity * 0.5})`;
+  ctx.lineWidth = 12;
+  ctx.stroke();
 }
 
 // Update spawn interval to be more frequent
