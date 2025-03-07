@@ -6,7 +6,8 @@ const scoreElement = document.getElementById('score');
 class Fruit {
   constructor() {
     this.id = Math.random().toString(36).substring(2, 15);
-    this.size = Math.random() * 100 + 50;
+    this.size = Math.random() * 75 + 75;
+    this.score = 2;
     
     // Determine spawn side (left or right)
     this.spawnSide = Math.random() < 0.5 ? 'left' : 'right';
@@ -110,6 +111,13 @@ function adjustCanvasSize() {
 function spawnFruit(count = 1) {
   for (let i = 0; i < count; i++) {
     const fruit = new Fruit();
+
+    // Physics properties
+    fruit.weight = 0.5;
+    fruit.gravity = 1;
+    fruit.velocityY = -20;
+    const velocityXValue = 1;
+    const velocityXMultiplier = 7;
     
     // Randomly decide spawn side for each fruit
     const spawnFromLeft = Math.random() < 0.5;
@@ -117,11 +125,11 @@ function spawnFruit(count = 1) {
     // Update initial position and velocities based on random spawn side
     if (spawnFromLeft) {
       fruit.x = -fruit.size;
-      fruit.velocityX = 5 + Math.random() * 5;
+      fruit.velocityX = velocityXValue + Math.random() * velocityXMultiplier;  
       fruit.rotationSpeed = 0.05 + Math.random() * 0.05;
     } else {
       fruit.x = canvas.width + fruit.size;
-      fruit.velocityX = -(5 + Math.random() * 5);
+      fruit.velocityX = -(velocityXValue + Math.random() * velocityXMultiplier);
       fruit.rotationSpeed = -(0.05 + Math.random() * 0.05);
     }
     
@@ -136,11 +144,13 @@ function spawnFruit(count = 1) {
 }
 
 // Fungsi deteksi apakah buah terpotong
-function detectSlicedFruit(mx, my) {
+function detectSlicedFruit(touches) {
   fruits = fruits.filter(fruit => {
-    if (fruit.isSliced(mx, my)) {
-      score += 10;
-      return false; // Hapus buah yang terpotong
+    for (const touch of touches) {
+      if (fruit.isSliced(touch.x, touch.y)) {
+        score += fruit.score;
+        return false; // Hapus buah yang terpotong
+      }
     }
     return true;
   });
@@ -151,32 +161,60 @@ function detectSlicedFruit(mx, my) {
 canvas.addEventListener('click', (e) => {
   const mx = e.offsetX;
   const my = e.offsetY;
-  detectSlicedFruit(mx, my);
+
+  const touches = [{ x: mx, y: my }];
+  
+  detectSlicedFruit(touches);
 });
 
 // Handler untuk touch di perangkat mobile
 canvas.addEventListener('touchstart', (e) => {
-  const mx = e.touches[0].clientX;
-  const my = e.touches[0].clientY;
-  detectSlicedFruit(mx, my);
+  const mx1 = e.touches[0].clientX;
+  const my1 = e.touches[0].clientY;
+  const mx2 = e.touches[1]?.clientX;
+  const my2 = e.touches[1]?.clientY;
+
+  const touches = [{ x: mx1, y: my1 }];
+
+  if (mx2 && my2) {
+    touches.push({ x: mx2, y: my2 });
+  }
+
+  detectSlicedFruit(touches);
 });
 
 canvas.addEventListener('touchmove', (e) => {
-  const mx = e.touches[0].clientX;
-  const my = e.touches[0].clientY;
+  const mx1 = e.touches[0].clientX;
+  const my1 = e.touches[0].clientY;
+  const mx2 = e.touches[1]?.clientX;
+  const my2 = e.touches[1]?.clientY;
 
-  // Menambahkan titik baru ke swipePoints
-  const newPoint = {
-    x: mx,
-    y: my,
+  const touches = [{ x: mx1, y: my1 }];
+  const points = [];
+  const newPoint1 = {
+    x: mx1,
+    y: my1,
     timestamp: Date.now(),
   };
+  points.push(newPoint1);
 
-  if (swipePoints.length < 50) {
-    swipePoints.push(newPoint);
+  if (mx2 && my2) {
+    touches.push({ x: mx2, y: my2 });
+    const newPoint2 = {
+      x: mx2,
+      y: my2,
+      timestamp: Date.now(),
+    };
+    points.push(newPoint2);
   }
 
-  detectSlicedFruit(mx, my);
+  // Menambahkan titik baru ke swipePoints
+
+  if (points.length) {
+    swipePoints.push(...points);
+  }
+
+  detectSlicedFruit(touches);
 });
 
 // Fungsi untuk memperbarui animasi dan gerakkan buah
